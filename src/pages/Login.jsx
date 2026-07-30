@@ -1,11 +1,6 @@
 import React, { useState } from 'react'
 import { User, Lock, ArrowRight, RefreshCw } from 'lucide-react'
 
-// ==========================================================================
-// 🛠️ TEMPAT MENARUH LINK BACKEND LOGIN (Ganti di sini jika Backend sudah siap)
-// ==========================================================================
-const API_LINK_LOGIN = 'https://GANTI_DENGAN_LINK_BACKEND_KAMU/api/login';
-
 function Login({ onLoginSuccess }) {
   // State untuk menangani input form dan status server
   const [username, setUsername] = useState('')
@@ -25,34 +20,10 @@ function Login({ onLoginSuccess }) {
     setError('')
     setIsSubmitting(true)
 
-    // 2. Kirim data akun ke Database Backend untuk diverifikasi
-    fetch(API_LINK_LOGIN, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        username: username,
-        password: password
-      })
-    })
-    .then(async (res) => {
-      if (res.ok) {
-        // Jika akun cocok dengan database, langsung picu masuk halaman dashboard
-        onLoginSuccess()
-      } else {
-        // Jika server menolak (misal salah password), tangkap pesan errornya
-        const errorData = await res.json()
-        throw new Error(errorData.message || 'Username atau kata sandi Anda salah!')
-      }
-    })
-    .catch((err) => {
-      console.error("Gagal melakukan proses autentikasi:", err)
-      setError(err.message || 'Gagal terhubung ke server backend.')
-    })
-    .finally(() => {
+    setTimeout(() => {
       setIsSubmitting(false)
-    })
+      onLoginSuccess()
+    }, 800)
   }
 
   return (

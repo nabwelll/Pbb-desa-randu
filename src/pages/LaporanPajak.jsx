@@ -13,11 +13,7 @@ import {
   Filter,
   CheckCircle2
 } from 'lucide-react'
-
-// ==========================================================================
-// 🛠️ TEMPAT MENARUH LINK BACKEND LAPORAN (Ganti di sini jika Backend sudah siap)
-// ==========================================================================
-const API_LINK_LAPORAN = 'https://GANTI_DENGAN_LINK_BACKEND_KAMU/api/pbb/laporan';
+import { fetchLaporanData } from '../lib/pbbSupabase'
 
 function LaporanPajak() {
   const [isLoading, setIsLoading] = useState(true)
@@ -41,22 +37,15 @@ function LaporanPajak() {
   // Fungsi Sinkronisasi Mengambil Catatan Laporan dari Database Backend
   useEffect(() => {
     setIsLoading(true)
-    fetch(API_LINK_LAPORAN)
-      .then(res => res.json())
-      .then(dataAsli => {
-        if (dataAsli) {
-          setRekapKeuangan({
-            penerimaanHariIni: dataAsli.penerimaan_hari_ini || 0,
-            penerimaanBulanIni: dataAsli.penerimaan_bulan_ini || 0,
-            totalTransaksiSukses: dataAsli.total_transaksi || 0,
-            efektivitasSistem: dataAsli.efektivitas_persen || 0
-          })
-          setLogTransaksi(dataAsli.daftar_transaksi || [])
-        }
-        setIsLoading(false)
+    fetchLaporanData()
+      .then(({ rekapKeuangan: rekapKeuanganData, logTransaksi: logTransaksiData }) => {
+        setRekapKeuangan(rekapKeuanganData)
+        setLogTransaksi(logTransaksiData)
       })
       .catch(error => {
-        console.error("Gagal mengambil lembar laporan pajak dari database:", error)
+        console.error('Gagal mengambil lembar laporan pajak dari Supabase:', error)
+      })
+      .finally(() => {
         setIsLoading(false)
       })
   }, [])

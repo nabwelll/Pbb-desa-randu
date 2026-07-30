@@ -16,11 +16,7 @@ import {
   ChevronLeft,
   ChevronRight
 } from 'lucide-react'
-
-// ==========================================================================
-// 🛠️ TEMPAT MENARUH LINK BACKEND DATA WARGA (Ganti di sini jika Backend sudah siap)
-// ==========================================================================
-const API_LINK_WARGA = 'https://GANTI_DENGAN_LINK_BACKEND_KAMU/api/pbb/warga';
+import { fetchWargaData } from '../lib/pbbSupabase'
 
 function DataWarga() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
@@ -37,15 +33,14 @@ function DataWarga() {
   // Fungsi Sinkronisasi Mengambil Data dari Database (Backend)
   useEffect(() => {
     setIsLoading(true)
-    fetch(API_LINK_WARGA)
-      .then(res => res.json())
-      .then(dataAsli => {
-        // Memasukkan data asli dari database ke dalam state React
+    fetchWargaData()
+      .then((dataAsli) => {
         setDataWarga(dataAsli)
-        setIsLoading(false)
       })
-      .catch(error => {
-        console.error("Gagal mengambil data warga dari database backend:", error)
+      .catch((error) => {
+        console.error('Gagal mengambil data warga dari Supabase:', error)
+      })
+      .finally(() => {
         setIsLoading(false)
       })
   }, [])

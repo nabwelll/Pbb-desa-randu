@@ -13,11 +13,7 @@ import {
   UserCheck,
   ChevronRight
 } from 'lucide-react'
-
-// ==========================================================================
-// 🛠️ TEMPAT MENARUH LINK BACKEND SEKTOR (Ganti di sini jika Backend sudah siap)
-// ==========================================================================
-const API_LINK_SEKTOR = 'https://GANTI_DENGAN_LINK_BACKEND_KAMU/api/pbb/sektor';
+import { fetchSektorData } from '../lib/pbbSupabase'
 
 function SektorWilayah() {
   const [isLoading, setIsLoading] = useState(true)
@@ -29,17 +25,15 @@ function SektorWilayah() {
   // Fungsi Sinkronisasi Mengambil Data Sektor dari Database Backend
   useEffect(() => {
     setIsLoading(true)
-    fetch(API_LINK_SEKTOR)
-      .then(res => res.json())
-      .then(dataAsli => {
-        if (dataAsli) {
-          setDaftarSektor(dataAsli.sektor || [])
-          setTotalSektor(dataAsli.total_sektor || 0)
-        }
-        setIsLoading(false)
+    fetchSektorData()
+      .then(({ daftarSektor: daftarSektorData, totalSektor: totalSektorData }) => {
+        setDaftarSektor(daftarSektorData)
+        setTotalSektor(totalSektorData)
       })
       .catch(error => {
-        console.error("Gagal mengambil data sektor wilayah dari database:", error)
+        console.error('Gagal mengambil data sektor wilayah dari Supabase:', error)
+      })
+      .finally(() => {
         setIsLoading(false)
       })
   }, [])

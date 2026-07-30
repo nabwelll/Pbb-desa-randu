@@ -12,11 +12,7 @@ import {
   Building,
   CheckCircle2
 } from 'lucide-react'
-
-// ==========================================================================
-// 🛠️ TEMPAT MENARUH LINK BACKEND SETTINGS (Ganti di sini jika Backend sudah siap)
-// ==========================================================================
-const API_LINK_SETTINGS = 'https://GANTI_DENGAN_LINK_BACKEND_KAMU/api/pbb/settings';
+import { fetchSettingsData, saveSettingsData } from '../lib/pbbSupabase'
 
 function Pengaturan() {
   const [isLoading, setIsLoading] = useState(true)
@@ -41,22 +37,14 @@ function Pengaturan() {
   // Fungsi Ambil Data Pengaturan yang Tersimpan di Database
   useEffect(() => {
     setIsLoading(true)
-    fetch(API_LINK_SETTINGS)
-      .then(res => res.json())
-      .then(dataAsli => {
-        if (dataAsli) {
-          setFormDesa({
-            namaDesa: dataAsli.nama_desa || '',
-            kecamatan: dataAsli.kecamatan || '',
-            kabupaten: dataAsli.kabupaten || '',
-            tahunAnggaran: dataAsli.tahun_anggaran || '',
-            targetNominalDesa: dataAsli.target_nominal || 0
-          })
-        }
-        setIsLoading(false)
+    fetchSettingsData()
+      .then((dataAsli) => {
+        setFormDesa(dataAsli)
       })
       .catch(error => {
-        console.error("Gagal memuat konfigurasi pengaturan:", error)
+        console.error('Gagal memuat konfigurasi pengaturan dari Supabase:', error)
+      })
+      .finally(() => {
         setIsLoading(false)
       })
   }, [])
@@ -65,19 +53,12 @@ function Pengaturan() {
   const handleSaveDesa = (e) => {
     e.preventDefault()
     setIsSaving(true)
-    
-    fetch(API_LINK_SETTINGS, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(formDesa)
-    })
-    .then(res => {
-      if(res.ok) {
+    saveSettingsData(formDesa)
+    .then(() => {
         setNotifikasi('Konfigurasi profil desa berhasil diperbarui!')
         setTimeout(() => setNotifikasi(''), 3000)
-      }
     })
-    .catch(err => console.error("Gagal menyimpan pengaturan desa:", err))
+    .catch(err => console.error('Gagal menyimpan pengaturan desa:', err))
     .finally(() => setIsSaving(false))
   }
 
