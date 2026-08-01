@@ -178,6 +178,15 @@ const detectWorkbookContext = (sheetName, fileName = '') => {
 }
 
 const detectExcelFormat = (rows) => {
+  // Cek flat list: baris dengan (nomor urut | NOP | nama | nominal)
+  const dataRows = rows.filter(r => r && (typeof r[0] === 'number' && r[0] > 0))
+  if (dataRows.length >= 2) {
+    const sample = dataRows[0]
+    const col1 = String(sample[1] ?? '').replace(/\D/g, '')
+    if (col1.length >= 15 && typeof sample[3] === 'number') {
+      return 'flatlist'
+    }
+  }
   for (let i = 0; i < Math.min(10, rows.length); i++) {
     const headerStr = (rows[i] ?? []).map(h => String(h).toLowerCase()).join('|')
     if (headerStr.includes('nominal') || headerStr.includes('keterangan') || headerStr.includes('rekonsiliasi')) {
@@ -188,6 +197,27 @@ const detectExcelFormat = (rows) => {
   if (hasRtRow) return 'dph'
   const hasNopDetail = rows.some(r => !r[0] && String(r[1] ?? '').replace(/\D/g, '').length >= 15)
   return hasNopDetail ? 'rekonsiliasi' : 'dph'
+}
+
+// Parser untuk format flat list: nomor | NOP | nama | nominal | (kode blok opsional)
+const parseFlatListRows = (rows) => {
+  const result = []
+  for (const row of rows) {
+    if (!row || typeof row[0] !== 'number' || row[0] <= 0) continue
+    const nopRaw = String(row[1] ?? '').trim()
+    const namaWp = String(row[2] ?? '').trim()
+    const nominal = typeof row[3] === 'number' ? row[3] : 0
+    const cleanDigits = nopRaw.replace(/\D/g, '')
+    if (cleanDigits.length < 15 || !namaWp) continue
+    result.push({
+      nop: nopRaw.replace(/[^\d.-]/g, ''),
+      namaWp,
+      kepalaKeluarga: namaWp,
+      rt: '',
+      nominal,
+    })
+  }
+  return result
 }
 
 const parseRekonsiliasiRows = (rows) => {
@@ -311,7 +341,73 @@ export async function importExcelSppt(file, { tahunPajak = CURRENT_YEAR, overrid
 
     const format = detectExcelFormat(rows)
 
-    if (format === 'rekonsiliasi') {
+    if (format === 'flatlist') {
+      const parsedItems = parseFlatListRows(rows)
+      const tagihanMap = new Map()
+
+      for (const item of parsedItems) {
+        // Cari atau buat KK berdasarkan nama
+        let familyId = null
+        const { data: existingKK } = await supabase
+          .from('keluarga_pbb')
+          .select('id')
+          .ilike('nama_kepala_keluarga', item.kepalaKeluarga)
+          .eq('kode_blok', kodeBlokDefault)
+          .limit(1)
+          .maybeSingle()
+
+        if (existingKK) {
+          familyId = existingKK.id
+        } else {
+          const { data: newKK } = await supabase
+            .from('keluarga_pbb')
+            .insert({
+              nama_kepala_keluarga: item.kepalaKeluarga,
+              nama_anggota_raw: item.kepalaKeluarga,
+              rt: '',
+              kode_blok: kodeBlokDefault,
+              status_aktif: true,
+              catatan: `Diimpor dari ${file.name}`,
+            })
+            .select('id')
+            .single()
+          if (newKK) familyId = newKK.id
+        }
+
+        if (!familyId) continue
+
+        const payload = {
+          keluarga_id: familyId,
+          nop: item.nop,
+          nama_wp: item.namaWp,
+          tahun_pajak: tahunPajak,
+          nominal_tagihan: item.nominal,
+          denda: 0,
+          status_lunas: false,
+          tertagih_ke: item.kepalaKeluarga,
+          dibayarkan_oleh: '',
+          tanggal_jatuh_tempo: `${tahunPajak}-09-30`,
+        }
+
+        if (!tagihanMap.has(item.nop)) tagihanMap.set(item.nop, payload)
+      }
+
+      const tagihanPayloads = Array.from(tagihanMap.values())
+      const BATCH_SIZE = 100
+      for (let i = 0; i < tagihanPayloads.length; i += BATCH_SIZE) {
+        const batch = tagihanPayloads.slice(i, i + BATCH_SIZE)
+        const { error: tagErr } = await supabase
+          .from('tagihan_pbb')
+          .upsert(batch, { onConflict: 'nop,tahun_pajak' })
+        if (!tagErr) insertedRows.push(...batch)
+        else {
+          for (const t of batch) {
+            const { error: e } = await supabase.from('tagihan_pbb').upsert(t, { onConflict: 'nop,tahun_pajak' })
+            if (!e) insertedRows.push(t)
+          }
+        }
+      }
+    } else if (format === 'rekonsiliasi') {
       const parsedItems = parseRekonsiliasiRows(rows)
 
       const familyMap = new Map()
