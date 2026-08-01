@@ -282,8 +282,6 @@ export async function importExcelSppt(file, { tahunPajak = CURRENT_YEAR, overrid
     const wilayahPayload = {
       kode_blok: kodeBlokDefault,
       nama_wilayah: getNamaWilayah(kodeBlokDefault),
-      nama_kadus: `Koordinator Dusun ${kodeBlokDefault.toUpperCase()}`,
-      urutan: 1,
       warna_tema: 'bg-[#002b8c]',
     }
     await supabase.from('wilayah_penagihan').upsert(wilayahPayload, { onConflict: 'kode_blok' })
