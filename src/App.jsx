@@ -457,7 +457,8 @@ function MainAppComponent({ currentUser, onLogout, activeTab, onNavigate }) {
   // State Halaman 3: Laporan Pajak (LPP)
   const [filterTahun, setFilterTahun] = useState(String(new Date().getFullYear()))
   const [filterBulan, setFilterBulan] = useState('Semua Bulan')
-  const [filterMetode, setFilterMetode] = useState('Semua Metode')
+  const [filterTanggalDari, setFilterTanggalDari] = useState('')
+  const [filterTanggalSampai, setFilterTanggalSampai] = useState('')
   const [filterStatusLaporan, setFilterStatusLaporan] = useState('Semua Status')
   const [rekapKeuangan, setRekapKeuangan] = useState({ penerimaanHariIni: 0, penerimaanBulanIni: 0, totalTransaksiSukses: 0, efektivitasSistem: 0 })
   const [logTransaksi, setLogTransaksi] = useState([])
@@ -567,7 +568,7 @@ function MainAppComponent({ currentUser, onLogout, activeTab, onNavigate }) {
   }, [activeTab])
 
   useEffect(() => { setCurrentPage(1) }, [searchTerm, filterWilayah, filterStatus, filterTahun])
-  useEffect(() => { setCurrentLaporanPage(1) }, [filterBulan, filterMetode, filterWilayah, filterTahun])
+  useEffect(() => { setCurrentLaporanPage(1) }, [filterBulan, filterTanggalDari, filterTanggalSampai, filterWilayah, filterTahun])
 
   const handleOpenImportDialog = () => {
     fileInputRef.current?.click()
@@ -717,29 +718,42 @@ function MainAppComponent({ currentUser, onLogout, activeTab, onNavigate }) {
     setIsSavingWarga(true)
     try {
       const headOfFamily = (addForm.tertagih_ke && addForm.tertagih_ke.trim()) ? addForm.tertagih_ke.trim() : addForm.nama.trim()
-      const { data: keluargaRow, error: keluargaError } = await supabase
+
+      // Cari KK existing berdasarkan nama (case-insensitive) — jangan buat baru kalau sudah ada
+      const { data: existingKK } = await supabase
         .from('keluarga_pbb')
-        .upsert(
-          {
+        .select('id')
+        .ilike('nama_kepala_keluarga', headOfFamily)
+        .limit(1)
+        .maybeSingle()
+
+      let keluargaId
+      if (existingKK) {
+        // Pakai KK yang sudah ada
+        keluargaId = existingKK.id
+      } else {
+        // Buat KK baru hanya kalau benar-benar tidak ada
+        const { data: newKK, error: keluargaError } = await supabase
+          .from('keluarga_pbb')
+          .insert({
             nama_kepala_keluarga: headOfFamily,
             nama_anggota_raw: headOfFamily,
             rt: addForm.rt.trim(),
             kode_blok: addForm.wilayah || 'ep',
             status_aktif: true,
             catatan: 'Input Manual Perangkat Desa',
-          },
-          { onConflict: 'kode_blok,rt,nama_kepala_keluarga' }
-        )
-        .select('id')
-        .single()
-
-      if (keluargaError) throw keluargaError
+          })
+          .select('id')
+          .single()
+        if (keluargaError) throw keluargaError
+        keluargaId = newKK.id
+      }
 
       const isLunas = addForm.status === 'Lunas'
       const targetYear = Number(addForm.tahun_pajak) || Number(filterTahun) || new Date().getFullYear()
 
       const tagihanPayload = {
-        keluarga_id: keluargaRow.id,
+        keluarga_id: keluargaId,
         nop: addForm.nop.trim(),
         nama_wp: addForm.nama.trim(),
         tahun_pajak: targetYear,
@@ -781,23 +795,31 @@ function MainAppComponent({ currentUser, onLogout, activeTab, onNavigate }) {
 
       let targetKeluargaId = selectedWarga.keluarga_id
       if (tertagihTarget) {
-        const { data: familyRow } = await supabase
+        // Cari KK existing berdasarkan nama (case-insensitive) — jangan buat baru kalau sudah ada
+        const { data: existingKK } = await supabase
           .from('keluarga_pbb')
-          .upsert(
-            {
+          .select('id')
+          .ilike('nama_kepala_keluarga', tertagihTarget)
+          .limit(1)
+          .maybeSingle()
+
+        if (existingKK) {
+          // Pakai KK yang sudah ada
+          targetKeluargaId = existingKK.id
+        } else {
+          // Buat KK baru hanya kalau benar-benar tidak ada
+          const { data: newKK } = await supabase
+            .from('keluarga_pbb')
+            .insert({
               nama_kepala_keluarga: tertagihTarget,
               nama_anggota_raw: tertagihTarget,
               rt: editForm.rt || '',
               kode_blok: editForm.wilayah || 'ep',
               status_aktif: true,
-            },
-            { onConflict: 'kode_blok,rt,nama_kepala_keluarga' }
-          )
-          .select('id')
-          .single()
-
-        if (familyRow) {
-          targetKeluargaId = familyRow.id
+            })
+            .select('id')
+            .single()
+          if (newKK) targetKeluargaId = newKK.id
         }
       }
 
@@ -908,17 +930,27 @@ function MainAppComponent({ currentUser, onLogout, activeTab, onNavigate }) {
     const cocokWilayah = filterWilayah === 'Semua Wilayah' || (t.kode_blok && t.kode_blok.toLowerCase() === filterWilayah.toLowerCase()) || t.wilayah === filterWilayah
     const cocokTahun = filterTahun === 'Semua Tahun' || String(t.tahun_pajak) === String(filterTahun)
     const cocokStatus = filterStatusLaporan === 'Semua Status' || t.status === filterStatusLaporan
-    let cocokMetode = true
-    if (filterMetode !== 'Semua Metode') {
-      const mVal = (t.metode || '').toLowerCase().trim()
-      const isLunas = t.status === 'Lunas'
-      if (filterMetode === 'Transfer Bank') {
-        cocokMetode = mVal.includes('transfer') || mVal.includes('bank') || mVal.includes('qris') || mVal.includes('brimo')
-      } else if (filterMetode === 'Tunai / Kolektor') {
-        cocokMetode = mVal.includes('tunai') || mVal.includes('kolektor') || (isLunas && !mVal.includes('transfer') && !mVal.includes('bank'))
+    let cocokTanggal = true
+    if (filterTanggalDari || filterTanggalSampai) {
+      // Hanya filter tanggal untuk yang sudah bayar (punya tanggal)
+      const tgl = t.tanggal && t.tanggal !== '-' ? t.tanggal : null
+      if (!tgl) {
+        // Kalau belum bayar (tanggal kosong) dan ada filter tanggal → tetap tampil kecuali filter status = Lunas
+        cocokTanggal = filterStatusLaporan !== 'Lunas'
+      } else {
+        // Parse tanggal format DD/MM/YYYY atau YYYY-MM-DD
+        let tglDate
+        if (tgl.includes('/')) {
+          const [d, m, y] = tgl.split('/')
+          tglDate = new Date(`${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`)
+        } else {
+          tglDate = new Date(tgl)
+        }
+        if (filterTanggalDari) cocokTanggal = cocokTanggal && tglDate >= new Date(filterTanggalDari)
+        if (filterTanggalSampai) cocokTanggal = cocokTanggal && tglDate <= new Date(filterTanggalSampai)
       }
     }
-    return cocokWilayah && cocokMetode && cocokTahun && cocokStatus
+    return cocokWilayah && cocokTahun && cocokStatus && cocokTanggal
   })
 
   const LAPORAN_PER_PAGE = 20
@@ -1642,8 +1674,20 @@ function MainAppComponent({ currentUser, onLogout, activeTab, onNavigate }) {
 
                     <div>
                       <label className="block text-slate-600 font-semibold mb-1 text-xs">Penanggung Jawab / Kepala Keluarga (Tertagih Ke)</label>
-                      <input type="text" placeholder="Kosongkan jika sama dengan nama pemilik" value={addForm.tertagih_ke ?? ''} onChange={e => setAddForm(f => ({ ...f, tertagih_ke: e.target.value }))} className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-900 text-slate-800 text-sm font-semibold" />
-                      <span className="text-[10px] text-slate-400 mt-1 block">Diisi jika bidang tanah/NOP ini ditagihkan ke Kepala Keluarga (KK) tertentu akibat perpindahan kepemilikan.</span>
+                      <input
+                        type="text"
+                        list="kk-list-add"
+                        placeholder="Ketik atau pilih nama KK yang sudah ada..."
+                        value={addForm.tertagih_ke ?? ''}
+                        onChange={e => setAddForm(f => ({ ...f, tertagih_ke: e.target.value }))}
+                        className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-900 text-slate-800 text-sm font-semibold"
+                      />
+                      <datalist id="kk-list-add">
+                        {Array.from(new Set(dataWarga.map(w => w.nama_kepala_keluarga || w.nama).filter(Boolean))).sort().map(nama => (
+                          <option key={nama} value={nama} />
+                        ))}
+                      </datalist>
+                      <span className="text-[10px] text-slate-400 mt-1 block">Pilih KK yang sudah ada, atau ketik nama baru jika belum terdaftar. Kosongkan jika sama dengan nama pemilik.</span>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
@@ -1724,8 +1768,20 @@ function MainAppComponent({ currentUser, onLogout, activeTab, onNavigate }) {
 
                     <div>
                       <label className="block text-slate-600 font-semibold mb-1 text-xs">Penanggung Jawab / Kepala Keluarga (Tertagih Ke)</label>
-                      <input placeholder="Kosongkan jika sama dengan nama pemilik" value={editForm.tertagih_ke ?? ''} onChange={e => setEditForm(f => ({ ...f, tertagih_ke: e.target.value }))} className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-900 text-slate-800 text-sm font-semibold" />
-                      <span className="text-[10px] text-slate-400 mt-1 block">Gunakan jika bidang tanah/NOP ini ditagihkan ke Kepala Keluarga (KK) lain akibat perpindahan kepemilikan.</span>
+                      <input
+                        type="text"
+                        list="kk-list-edit"
+                        placeholder="Ketik atau pilih nama KK yang sudah ada..."
+                        value={editForm.tertagih_ke ?? ''}
+                        onChange={e => setEditForm(f => ({ ...f, tertagih_ke: e.target.value }))}
+                        className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-900 text-slate-800 text-sm font-semibold"
+                      />
+                      <datalist id="kk-list-edit">
+                        {Array.from(new Set(dataWarga.map(w => w.nama_kepala_keluarga || w.nama).filter(Boolean))).sort().map(nama => (
+                          <option key={nama} value={nama} />
+                        ))}
+                      </datalist>
+                      <span className="text-[10px] text-slate-400 mt-1 block">Pilih KK yang sudah ada, atau ketik nama baru jika belum terdaftar. Kosongkan jika sama dengan nama pemilik.</span>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
@@ -2070,7 +2126,34 @@ function MainAppComponent({ currentUser, onLogout, activeTab, onNavigate }) {
                       <option key={opt.value} value={opt.value}>{opt.label}</option>
                     ))}
                   </select>
-                  <select value={filterMetode} onChange={(e) => setFilterMetode(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-xs font-semibold text-slate-600"><option>Semua Metode</option><option>Tunai / Kolektor</option><option>Transfer Bank</option></select>
+                  <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide shrink-0">Dari</span>
+                    <input
+                      type="date"
+                      value={filterTanggalDari}
+                      onChange={e => { setFilterTanggalDari(e.target.value); setCurrentLaporanPage(1) }}
+                      className="bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide shrink-0">Sampai</span>
+                    <input
+                      type="date"
+                      value={filterTanggalSampai}
+                      onChange={e => { setFilterTanggalSampai(e.target.value); setCurrentLaporanPage(1) }}
+                      className="bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
+                    />
+                  </div>
+                  {(filterTanggalDari || filterTanggalSampai) && (
+                    <button
+                      onClick={() => { setFilterTanggalDari(''); setFilterTanggalSampai('') }}
+                      className="text-[10px] font-bold text-slate-400 hover:text-red-500 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors shrink-0"
+                    >
+                      Reset Tanggal
+                    </button>
+                  )}
                   <select value={filterStatusLaporan} onChange={(e) => setFilterStatusLaporan(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-xs font-semibold text-slate-600">
                     <option value="Semua Status">Semua Status</option>
                     <option value="Lunas">Lunas</option>
