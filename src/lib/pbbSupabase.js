@@ -1009,49 +1009,28 @@ export async function registerNewUser({ nama_lengkap, username, password, role, 
     wilayah: role === 'sekdes' ? 'Semua Wilayah' : (wilayah || 'ep')
   }
 
-  // 1. Simpan & Sinkronkan langsung ke Supabase PostgreSQL Tabel 'users'
-  const userPayload = {
-    nama_lengkap: newUser.nama_lengkap,
-    username: newUser.username,
-    role: newUser.role === 'sekdes' ? 'admin' : 'kadus',
-    kode_blok_tugas: newUser.wilayah,
-    is_active: true
-  }
-
-  let dbSuccess = false
-
+  // Simpan ke Supabase tabel users_pbb
   try {
-    // Cobalah menyertakan kolom password jika ada di DB
-    const { error: dbErr1 } = await supabase
-      .from('users')
-      .upsert({ ...userPayload, password: newUser.password }, { onConflict: 'username' })
+    const { error: dbErr } = await supabase
+      .from('users_pbb')
+      .upsert({
+        nama: newUser.nama_lengkap,
+        username: newUser.username,
+        password_hash: newUser.password,
+        role: newUser.role,
+        wilayah: newUser.wilayah,
+        is_active: true,
+      }, { onConflict: 'username' })
 
-    if (!dbErr1) {
-      dbSuccess = true
-    } else {
-      // Jika kolom password belum ada di DB, coba tanpa kolom password
-      const { error: dbErr2 } = await supabase
-        .from('users')
-        .upsert(userPayload, { onConflict: 'username' })
-
-      if (!dbErr2) {
-        dbSuccess = true
-      } else {
-        console.error('Gagal upsert Supabase users:', dbErr2.message)
-        throw new Error(`Gagal menyimpan akun ke database Supabase: ${dbErr2.message}`)
-      }
+    if (dbErr) {
+      console.error('Gagal upsert users_pbb:', dbErr.message)
+      throw new Error(`Gagal menyimpan akun ke database: ${dbErr.message}`)
     }
   } catch (err) {
-    console.error('Kesalahan koneksi/RLS Supabase users:', err.message)
-    // Jika pesan error memuat RLS policy, beri tahu pesan jelas
-    if (err.message?.toLowerCase().includes('row-level security') || err.message?.toLowerCase().includes('policy')) {
-      throw new Error(`Tabel 'users' di Supabase menolak akses (RLS Policy). Mohon jalankan SQL "public write users" di Supabase SQL Editor.`)
-    } else {
-      throw err
-    }
+    throw err
   }
 
-  // 2. Simpan ke LocalStorage cache jika DB sukses/bebas error
+  // Simpan ke LocalStorage cache
   users.push(newUser)
   localStorage.setItem('pbb_registered_users', JSON.stringify(users))
 
@@ -1066,21 +1045,25 @@ export async function authenticateUser(usernameInput, passwordInput) {
     throw new Error('Username dan kata sandi wajib diisi!')
   }
 
-  // 1. Cek langsung ke database Supabase PostgreSQL 'users'
+  // 1. Cek langsung ke database Supabase PostgreSQL 'users_pbb'
   try {
     const { data: dbUser, error } = await supabase
-      .from('users')
+      .from('users_pbb')
       .select('*')
       .eq('username', cleanUsername)
       .maybeSingle()
 
     if (dbUser && !error) {
-      const userRole = dbUser.role === 'admin' ? 'sekdes' : 'kadus'
-      const userWilayah = userRole === 'sekdes' ? 'Semua Wilayah' : (dbUser.kode_blok_tugas || 'ep')
+      // Verifikasi password
+      if (dbUser.password_hash !== cleanPassword) {
+        throw new Error('Kata sandi yang Anda masukkan salah!')
+      }
+      const userRole = dbUser.role === 'sekdes' ? 'sekdes' : 'kadus'
+      const userWilayah = userRole === 'sekdes' ? 'Semua Wilayah' : (dbUser.wilayah || 'ep')
       const dbAuthUser = {
         username: dbUser.username,
         password: cleanPassword,
-        nama_lengkap: dbUser.nama_lengkap || cleanUsername,
+        nama_lengkap: dbUser.nama || cleanUsername,
         role: userRole,
         wilayah: userWilayah
       }
@@ -1098,6 +1081,8 @@ export async function authenticateUser(usernameInput, passwordInput) {
       return dbAuthUser
     }
   } catch (err) {
+    // Kalau error dari password salah, lempar langsung
+    if (err.message?.includes('salah')) throw err
     console.warn('Gagal cek Supabase DB user, fallback ke local storage:', err.message)
   }
 
