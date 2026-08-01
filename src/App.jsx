@@ -2478,7 +2478,7 @@ function MainAppComponent({ currentUser, onLogout, activeTab, onNavigate }) {
                   <div className="border-b-2 border-black pb-3 mb-6 flex justify-between items-end">
                     <div>
                       <h1 className="text-xl font-bold uppercase tracking-wider text-black">PEMERINTAH DESA RANDU</h1>
-                      <p className="text-xs font-semibold text-slate-700">KECAMATAN TAMAN — KABUPATEN PEMALANG</p>
+                      <p className="text-xs font-semibold text-slate-700">KECAMATAN PECALUNGAN — KABUPATEN BATANG</p>
                       <p className="text-sm font-bold text-black mt-1">LEMBAR SLIP PENAGIHAN PBB-P2 PER KEPALA KELUARGA</p>
                     </div>
                     <div className="text-right">
